@@ -43,7 +43,7 @@ def generate_recommendations(user_id):
             cursor.execute("""
                 SELECT equipID, equipName, equipPrice, equipCategory, equipBrand
                 FROM equipment
-                ORDER BY RAND() LIMIT 10
+                ORDER BY RAND() LIMIT 15
             """)
             fallback_recommendations = cursor.fetchall()
             cursor.execute("""

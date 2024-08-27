@@ -1,17 +1,20 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS  # Import CORS
 from utils.recommendation import generate_recommendations 
-import mysql.connector  # Import mysql.connector for MySQL connection
+import mysql.connector
 
 app = Flask(__name__)
+
+# Initialize CORS
+CORS(app, resources={r"/api/*": {"origins": "*"}})  # Allow all origins or specify allowed origins
 
 def connect_to_mysql():
     """ Function to connect to MySQL and print status """
     try:
-        # Example connection (adjust parameters as needed)
         connection = mysql.connector.connect(
             host='localhost',
             user='root',
-            password='',  
+            password='',
             database='Badminton_Raptor_Store'
         )
         if connection.is_connected():
