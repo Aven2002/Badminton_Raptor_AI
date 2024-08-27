@@ -177,5 +177,4 @@ def generate_recommendations(user_id):
         cursor.close()
         connection.close()
 
-    print(f"Top Recommendations: {top_recommendations}")
     return {'recommendations': top_recommendations}
