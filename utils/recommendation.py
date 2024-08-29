@@ -1,20 +1,11 @@
-import mysql.connector
+# utils/recommendation.py
 import json
 from flask import jsonify
-from config import Config
-from decimal import Decimal
-from datetime import datetime, timedelta
+from db import get_db_connection
 import numpy as np
+from datetime import datetime
+import mysql.connector
 
-def get_db_connection():
-    return mysql.connector.connect(
-        host=Config.DATABASE_HOST,
-        user=Config.DATABASE_USER,
-        password=Config.DATABASE_PASSWORD,
-        database=Config.DATABASE_NAME
-    )
-
-# Define weights
 WEIGHTS = {
     'category': 0.3,
     'price': 0.4,
@@ -26,8 +17,7 @@ def generate_recommendations(user_id):
     cursor = connection.cursor(dictionary=True)
 
     try:
-        #Step 1 : Determine User Preferences
-        # Fetch user favorites
+        # Step 1: Determine User Preferences
         cursor.execute("""
             SELECT e.equipID, e.equipName, e.equipPrice, e.equipCategory, e.equipBrand, f.created_at
             FROM favorite f
@@ -36,10 +26,7 @@ def generate_recommendations(user_id):
         """, (user_id,))
         favorites = cursor.fetchall()
 
-        print(f"Favorites fetched: {favorites}")
-
         if not favorites:
-            print("No favorites found for user.")
             cursor.execute("""
                 SELECT equipID, equipName, equipPrice, equipCategory, equipBrand
                 FROM equipment
@@ -66,16 +53,12 @@ def generate_recommendations(user_id):
         min_date = min(dates) if dates else datetime.now()
         max_date = max(dates) if dates else datetime.now()
 
-        print(f"Date Range: Min Date - {min_date}, Max Date - {max_date}")
-
         prices = [float(fav['equipPrice']) for fav in favorites]
         median_price = np.median(prices) if prices else 0
         q1, q3 = np.percentile(prices, [25, 75]) if prices else (0, 0)
         iqr = q3 - q1
         lower_bound = median_price - 1.5 * iqr if iqr else 0
         upper_bound = median_price + 1.5 * iqr if iqr else median_price
-
-        print(f"Price Range: Lower Bound - {lower_bound}, Upper Bound - {upper_bound}")
 
         # Calculate category and brand scores
         category_scores = {}
@@ -88,12 +71,10 @@ def generate_recommendations(user_id):
             days_range = (max_date - min_date).days
             recency_weight = 1 + (created_at - min_date).days / days_range if days_range > 0 else 1
 
-            print(f"Created At: {created_at}, Recency Weight: {recency_weight}")
-
             category_scores[category] = category_scores.get(category, 0) + recency_weight
             brand_preference[brand] = brand_preference.get(brand, 0) + 1
 
-        # Step 2 : Generate Recommendations
+        # Step 2: Generate Recommendations
         cursor.execute("""
             SELECT e.equipID, e.equipName, e.equipPrice, e.equipCategory, e.equipBrand
             FROM equipment e
@@ -101,8 +82,6 @@ def generate_recommendations(user_id):
             WHERE f.equipID IS NULL
         """, (user_id,))
         all_equipment = cursor.fetchall()
-        if cursor.nextset() is not None:
-            cursor.nextset()  # Skip any remaining results if there are any
 
         recommendations = []
         for item in all_equipment:
@@ -127,7 +106,7 @@ def generate_recommendations(user_id):
         recommendations.sort(key=lambda x: x['final_score'], reverse=True)
         top_recommendations = recommendations[:30]  # Get top 30 recommendations
 
-        # Step 3 : Insert into the database
+        # Step 3: Insert into the database
         cursor.execute("""
             SELECT equipment_ids
             FROM recommendations
@@ -139,19 +118,13 @@ def generate_recommendations(user_id):
 
         new_ids = [item['equipID'] for item in top_recommendations]
 
-            # Clear any extra result sets
-        while cursor.nextset():
-                cursor.fetchall()
-
         if set(existing_ids) == set(new_ids):
-            # Update last_shown_at if the same recommendations are present
             cursor.execute("""
                 UPDATE recommendations
                 SET last_shown_at = %s
                 WHERE userID = %s
             """, (datetime.now(), user_id))
         else:
-            # Insert a new record if recommendations differ
             cursor.execute("""
                 INSERT INTO recommendations (userID, equipment_ids, category_scores, price_scores, feature_scores, final_scores, last_shown_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
