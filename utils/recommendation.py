@@ -43,7 +43,7 @@ def generate_recommendations(user_id):
             cursor.execute("""
                 SELECT equipID, equipName, equipPrice, equipCategory, equipBrand
                 FROM equipment
-                ORDER BY RAND() LIMIT 15
+                ORDER BY RAND() LIMIT 30
             """)
             fallback_recommendations = cursor.fetchall()
             cursor.execute("""
@@ -125,7 +125,7 @@ def generate_recommendations(user_id):
                 recommendations.append(score)
 
         recommendations.sort(key=lambda x: x['final_score'], reverse=True)
-        top_recommendations = recommendations[:10]  # Get top 10 recommendations
+        top_recommendations = recommendations[:30]  # Get top 30 recommendations
 
         # Step 3 : Insert into the database
         cursor.execute("""
@@ -138,6 +138,10 @@ def generate_recommendations(user_id):
         existing_ids = json.loads(existing_recommendations['equipment_ids']) if existing_recommendations else []
 
         new_ids = [item['equipID'] for item in top_recommendations]
+
+            # Clear any extra result sets
+        while cursor.nextset():
+                cursor.fetchall()
 
         if set(existing_ids) == set(new_ids):
             # Update last_shown_at if the same recommendations are present
