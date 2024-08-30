@@ -27,6 +27,7 @@ def generate_recommendations(user_id):
         favorites = cursor.fetchall()
 
         if not favorites:
+            # Generate fallback recommendations
             cursor.execute("""
                 SELECT equipID, equipName, equipPrice, equipCategory, equipBrand
                 FROM equipment
@@ -46,7 +47,14 @@ def generate_recommendations(user_id):
                 datetime.now()
             ))
             connection.commit()
-            return {'recommendations': fallback_recommendations}
+
+            # Retrieve the recommendationId of the newly created recommendation
+            cursor.execute("""
+                SELECT LAST_INSERT_ID() AS recommendationId
+            """)
+            recommendation_id = cursor.fetchone()['recommendationId']
+
+            return {'recommendationId': recommendation_id, 'recommendations': fallback_recommendations}
 
         # Extract dates and calculate dynamic price range
         dates = [fav['created_at'] for fav in favorites]
@@ -106,15 +114,20 @@ def generate_recommendations(user_id):
         recommendations.sort(key=lambda x: x['final_score'], reverse=True)
         top_recommendations = recommendations[:30]  # Get top 30 recommendations
 
-        # Step 3: Insert into the database
+        # Step 3: Insert or Update Recommendations and get recommendationId
         cursor.execute("""
-            SELECT equipment_ids
+            SELECT recommendationID, equipment_ids
             FROM recommendations
             WHERE userID = %s
         """, (user_id,))
         existing_recommendations = cursor.fetchone()
-        
-        existing_ids = json.loads(existing_recommendations['equipment_ids']) if existing_recommendations else []
+
+        if existing_recommendations:
+            existing_ids = json.loads(existing_recommendations['equipment_ids'])
+            recommendation_id = existing_recommendations['recommendationID']
+        else:
+            existing_ids = []
+            recommendation_id = None
 
         new_ids = [item['equipID'] for item in top_recommendations]
 
@@ -144,7 +157,14 @@ def generate_recommendations(user_id):
                 json.dumps([item['final_score'] for item in top_recommendations]),
                 datetime.now()
             ))
-        connection.commit()
+            connection.commit()
+
+            # Retrieve the recommendationId of the newly inserted recommendation if not already set
+            if recommendation_id is None:
+                cursor.execute("""
+                    SELECT LAST_INSERT_ID() AS recommendationId
+                """)
+                recommendation_id = cursor.fetchone()['recommendationId']
 
     except mysql.connector.Error as err:
         print(f"Database error: {err}")
@@ -154,4 +174,5 @@ def generate_recommendations(user_id):
         cursor.close()
         connection.close()
 
-    return {'recommendations': top_recommendations}
+    return {'recommendationId': recommendation_id, 'recommendations': top_recommendations}
+
